@@ -1194,6 +1194,11 @@ input[type='checkbox'] {
   color: #6b21a8;
 }
 
+.modeBadge.auto {
+  background: #dcfce7;
+  color: #166534;
+}
+
 .historyRight {
   display: flex;
   align-items: center;
@@ -1267,6 +1272,83 @@ footer {
   display: flex;
   align-items: center;
   gap: 10px;
+}
+
+.autoBox {
+  margin-top: 18px;
+  padding: 16px;
+  border-radius: 14px;
+  background: #f6faf8;
+  border: 1px dashed #b9dbcd;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.autoBoxHead {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.autoBoxHead strong {
+  font-size: 13px;
+  color: var(--green-dark);
+}
+
+.autoBoxHead p {
+  margin: 4px 0 0;
+  font-size: 11.5px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.autoBoxHead code {
+  background: #e5efe9;
+  color: var(--ink);
+  padding: 1px 6px;
+  border-radius: 5px;
+  font-size: 11px;
+}
+
+.autoDelayWrap {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 170px;
+}
+
+.autoDelayWrap label {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+.autoBtnRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.autoBtnRow button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.autoStatusLine {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--green-dark);
+  background: #ffffff;
+  border: 1px solid #d4eae0;
+  padding: 9px 12px;
+  border-radius: 10px;
+  overflow-wrap: anywhere;
 }
 
 @media (max-width: 768px) {

@@ -32,7 +32,7 @@ export type MessageHistoryEntry = {
   hasImage: boolean;
   imageName?: string;
   sentAt: string;
-  mode: 'queue' | 'direct';
+  mode: 'queue' | 'direct' | 'auto';
 };
 
 const cleanPhone = (v: unknown) =>
@@ -147,6 +147,15 @@ const deduplicateAndMerge = (
 const STORAGE_KEY = 'wa-employee-list-v5';
 const HISTORY_STORAGE_KEY = 'wa-message-history-v1';
 const PAGE_SIZE = 100;
+const AUTO_BRIDGE_URL = 'http://127.0.0.1:4123';
+
+const fileToDataUrl = (f: File): Promise<string> =>
+  new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ''));
+    reader.onerror = () => reject(new Error('Failed to read image file'));
+    reader.readAsDataURL(f);
+  });
 
 const TALUKA_OCR_FIXES: Record<string, string> = {
   angameshwar: 'Sangameshwar',
@@ -197,6 +206,29 @@ export default function Home() {
   const [history, setHistory] = useState<MessageHistoryEntry[]>([]);
   const [historyQuery, setHistoryQuery] = useState('');
   const [notice, setNotice] = useState('');
+  const [autoDelaySec, setAutoDelaySec] = useState(6);
+  const [bridgeState, setBridgeState] = useState<{
+    reachable: boolean;
+    running: boolean;
+    qrPending: boolean;
+    total: number;
+    currentIndex: number;
+    sent: number;
+    failed: number;
+    currentRecipient?: { name: string; phone: string } | null;
+    lastError?: string;
+  }>({
+    reachable: false,
+    running: false,
+    qrPending: false,
+    total: 0,
+    currentIndex: 0,
+    sent: 0,
+    failed: 0,
+    currentRecipient: null,
+    lastError: ''
+  });
+  const loggedAutoKeysRef = useRef<Set<string>>(new Set());
   const fileRef = useRef<HTMLInputElement>(null);
 
   // Restore or initialize employees & history from local storage
@@ -691,6 +723,205 @@ export default function Home() {
 
   const removeHistoryEntry = (id: string) => {
     setHistory(prev => prev.filter(h => h.id !== id));
+  };
+
+  const syncAutoResultsToHistory = (
+    results: Array<{
+      employeeId?: string;
+      name: string;
+      phone: string;
+      taluka?: string;
+      designation?: string;
+      gramPanchayat?: string;
+      status: string;
+      sentAt: string;
+    }>,
+    jobId?: string | null,
+    msgText?: string,
+    imgFile?: File | null
+  ) => {
+    const newEntries: MessageHistoryEntry[] = [];
+    for (const r of results) {
+      if (r.status !== 'sent') continue;
+      const dedupeKey = `${jobId || 'cli'}::${r.phone}::${r.sentAt}`;
+      if (loggedAutoKeysRef.current.has(dedupeKey)) continue;
+      loggedAutoKeysRef.current.add(dedupeKey);
+      newEntries.push({
+        id: `auto-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        employeeId: String(r.employeeId ?? ''),
+        name: r.name,
+        phone: cleanPhone(r.phone),
+        taluka: r.taluka || 'General',
+        designation: r.designation || '',
+        gramPanchayat: r.gramPanchayat || '',
+        message: (msgText ?? message.trim()) || (imgFile ? `[Image: ${imgFile.name}]` : ''),
+        hasImage: Boolean(imgFile),
+        imageName: imgFile?.name,
+        sentAt: r.sentAt || new Date().toISOString(),
+        mode: 'auto'
+      });
+    }
+    if (newEntries.length) {
+      setHistory(prev => [...newEntries.reverse(), ...prev]);
+    }
+    return newEntries.length;
+  };
+
+  const buildAutoJobPayload = async () => {
+    const targets = employees.filter(
+      e => selected.includes(String(e.id)) && cleanPhone(e.phone).length === 10
+    );
+    if (!targets.length) {
+      setNotice('Select at least one recipient with a valid 10-digit mobile number.');
+      return null;
+    }
+    if (!message.trim() && !file) {
+      setNotice('Add message text or an image before starting or exporting.');
+      return null;
+    }
+    let imagePayload: { name: string; mimeType: string; dataUrl: string } | undefined;
+    if (file) {
+      const dataUrl = await fileToDataUrl(file);
+      imagePayload = { name: file.name, mimeType: file.type, dataUrl };
+    }
+    return {
+      createdAt: new Date().toISOString(),
+      message,
+      image: imagePayload,
+      minDelayMs: autoDelaySec * 1000,
+      maxDelayMs: (autoDelaySec + 5) * 1000,
+      recipients: targets.map(t => ({
+        id: String(t.id),
+        name: t.name,
+        phone: cleanPhone(t.phone),
+        district: t.district || '',
+        taluka: t.taluka,
+        designation: t.designation,
+        gramPanchayat: t.gramPanchayat || ''
+      }))
+    };
+  };
+
+  const checkAutoBridge = async (silent = false) => {
+    try {
+      const res = await fetch(`${AUTO_BRIDGE_URL}/health`);
+      if (!res.ok) throw new Error('Bridge error');
+      const data = await res.json();
+      setBridgeState({
+        reachable: true,
+        running: Boolean(data.running),
+        qrPending: Boolean(data.qrPending),
+        total: Number(data.total || 0),
+        currentIndex: Number(data.currentIndex || 0),
+        sent: Number(data.sent || 0),
+        failed: Number(data.failed || 0),
+        currentRecipient: data.currentRecipient || null,
+        lastError: data.lastError || ''
+      });
+      if (Array.isArray(data.results) && data.results.length) {
+        syncAutoResultsToHistory(data.results, data.jobId, message.trim(), file);
+      }
+      if (!silent) {
+        setNotice(
+          data.running
+            ? `PC Auto-Sender Bridge connected (${data.currentIndex}/${data.total} in progress).`
+            : 'PC Auto-Sender Bridge is online and ready.'
+        );
+      }
+      return data;
+    } catch {
+      setBridgeState(prev => ({ ...prev, reachable: false, running: false }));
+      if (!silent) {
+        setNotice(
+          'Local PC Bridge not detected on port 4123. Run "npm run auto-bridge" in your project folder on Windows, or export the Job JSON.'
+        );
+      }
+      return null;
+    }
+  };
+
+  useEffect(() => {
+    if (!bridgeState.running) return;
+    const timer = setInterval(() => {
+      void checkAutoBridge(true);
+    }, 1500);
+    return () => clearInterval(timer);
+  }, [bridgeState.running]);
+
+  const startAutoSendBridge = async () => {
+    const payload = await buildAutoJobPayload();
+    if (!payload) return;
+    try {
+      const res = await fetch(`${AUTO_BRIDGE_URL}/start`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setNotice(data?.error || 'Could not start PC auto-sender.');
+        return;
+      }
+      setBridgeState(prev => ({
+        ...prev,
+        reachable: true,
+        running: true,
+        total: payload.recipients.length,
+        currentIndex: 0,
+        sent: 0,
+        failed: 0,
+        lastError: ''
+      }));
+      setNotice(
+        `Started automated WhatsApp sending for ${payload.recipients.length} recipients on your PC. Scan the QR code if Chrome asks.`
+      );
+    } catch {
+      setBridgeState(prev => ({ ...prev, reachable: false, running: false }));
+      setNotice(
+        'Cannot reach local PC Bridge (http://127.0.0.1:4123). Run "npm run auto-bridge" on your Windows PC first.'
+      );
+    }
+  };
+
+  const stopAutoSendBridge = async () => {
+    try {
+      await fetch(`${AUTO_BRIDGE_URL}/stop`, { method: 'POST' });
+      setNotice('Stop requested — PC sender will halt cleanly after the current contact.');
+    } catch {
+      setNotice('Could not reach PC Bridge to send stop signal.');
+    }
+  };
+
+  const exportAutoSendJob = async () => {
+    const payload = await buildAutoJobPayload();
+    if (!payload) return;
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `wa-send-job-${new Date().toISOString().slice(0, 10)}.json`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    setNotice(
+      `Exported wa-send-job JSON (${payload.recipients.length} recipients). Run: npm run auto-send -- --job <file>.json`
+    );
+  };
+
+  const importAutoResults = async (f: File) => {
+    try {
+      const text = await f.text();
+      const parsed = JSON.parse(text);
+      if (!Array.isArray(parsed)) {
+        setNotice('Invalid results file. Expected wa-send-results.json array.');
+        return;
+      }
+      const addedCount = syncAutoResultsToHistory(parsed, f.name, message.trim(), file);
+      setNotice(`Imported ${addedCount} newly sent record${addedCount === 1 ? '' : 's'} into Message History.`);
+    } catch {
+      setNotice('Could not read results JSON file.');
+    }
   };
 
   const clearHistory = () => {
@@ -1349,6 +1580,86 @@ export default function Home() {
           This system respects WhatsApp privacy & anti-spam protocols by allowing you to confirm
           and send to each recipient one-by-one.
         </p>
+
+        <div className="autoBox">
+          <div className="autoBoxHead">
+            <div>
+              <strong>🤖 PC Auto-Sender (WhatsApp Web + Playwright)</strong>
+              <p>
+                Automatically opens each chat, attaches your image, and clicks Send from Chrome/Edge
+                on your Windows PC. Start bridge locally with <code>npm run auto-bridge</code>.
+              </p>
+            </div>
+            <div className="autoDelayWrap">
+              <label htmlFor="autoDelay">Safe Delay</label>
+              <select
+                id="autoDelay"
+                value={autoDelaySec}
+                onChange={e => setAutoDelaySec(Number(e.target.value))}
+              >
+                <option value={6}>6–11 sec / contact</option>
+                <option value={10}>10–15 sec / contact</option>
+                <option value={15}>15–20 sec (extra safe)</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="autoBtnRow">
+            {bridgeState.running ? (
+              <button type="button" className="textBtn danger" onClick={stopAutoSendBridge}>
+                ■ Stop Auto-Send ({bridgeState.currentIndex}/{bridgeState.total})
+              </button>
+            ) : (
+              <button
+                type="button"
+                className="outlineBtn"
+                disabled={selected.length === 0 || (!message.trim() && !file)}
+                onClick={startAutoSendBridge}
+              >
+                ▶ Auto-Send via Local PC ({selected.length})
+              </button>
+            )}
+            <button type="button" className="outlineBtn" onClick={() => checkAutoBridge(false)}>
+              🔌 Check PC Bridge
+            </button>
+            <button
+              type="button"
+              className="outlineBtn"
+              disabled={selected.length === 0 || (!message.trim() && !file)}
+              onClick={exportAutoSendJob}
+            >
+              ⬇ Export Job (.json)
+            </button>
+          </div>
+
+          {(bridgeState.reachable || bridgeState.lastError) && (
+            <div className="autoStatusLine">
+              {bridgeState.qrPending && (
+                <span>📱 Waiting for WhatsApp Web QR code scan in the opened Chrome window…</span>
+              )}
+              {bridgeState.running && !bridgeState.qrPending && (
+                <span>
+                  Sending {bridgeState.currentIndex}/{bridgeState.total}
+                  {bridgeState.currentRecipient
+                    ? ` · ${bridgeState.currentRecipient.name} (+91 ${bridgeState.currentRecipient.phone})`
+                    : ''}{' '}
+                  · ✓ {bridgeState.sent} sent · ✕ {bridgeState.failed} failed
+                </span>
+              )}
+              {!bridgeState.running && bridgeState.reachable && (
+                <span>
+                  ✓ PC Bridge ready on port 4123
+                  {bridgeState.total > 0
+                    ? ` (last batch: ${bridgeState.sent} sent, ${bridgeState.failed} failed)`
+                    : ''}
+                </span>
+              )}
+              {bridgeState.lastError && (
+                <span style={{ color: 'var(--danger)' }}>⚠️ {bridgeState.lastError}</span>
+              )}
+            </div>
+          )}
+        </div>
       </section>
 
       {/* STEP 4: SENDING QUEUE MONITOR */}
@@ -1465,6 +1776,18 @@ export default function Home() {
             </div>
           </div>
           <div className="headActions">
+            <label className="outlineBtn">
+              📥 Import PC Results (.json)
+              <input
+                type="file"
+                accept=".json"
+                hidden
+                onChange={e => {
+                  if (e.target.files?.[0]) importAutoResults(e.target.files[0]);
+                  e.currentTarget.value = '';
+                }}
+              />
+            </label>
             {history.length > 0 && (
               <>
                 <button type="button" className="outlineBtn" onClick={exportHistoryExcel}>
@@ -1504,7 +1827,7 @@ export default function Home() {
                   <span className="talukaTag">📍 {h.taluka}</span>
                   <span className="desigBadge regular">{h.designation}</span>
                   <span className={`modeBadge ${h.mode}`}>
-                    {h.mode === 'queue' ? 'Queue' : 'Direct'}
+                    {h.mode === 'queue' ? 'Queue' : h.mode === 'auto' ? 'Auto PC' : 'Direct'}
                   </span>
                 </div>
                 <div className="historyRight">

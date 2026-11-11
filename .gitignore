@@ -19,3 +19,8 @@ yarn-error.log*
 .env*.local
 .DS_Store
 *.pem
+
+# local WhatsApp Web Playwright session & exported job files
+/.wa-session/
+wa-send-job*.json
+wa-send-results*.json
