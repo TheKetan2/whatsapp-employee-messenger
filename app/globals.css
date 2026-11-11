@@ -35,16 +35,26 @@ body {
 .shell {
   max-width: 1040px;
   margin: auto;
-  padding: 0 24px 48px;
+  padding: env(safe-area-inset-top, 0px) 24px max(48px, env(safe-area-inset-bottom));
 }
 
 /* Topbar */
 .topbar {
-  height: 76px;
+  min-height: 76px;
+  padding: 12px 0;
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
   border-bottom: 1px solid var(--line);
+}
+
+.topbarRight {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
 }
 
 .brand {
@@ -87,6 +97,87 @@ body {
   padding: 6px 12px;
   border-radius: 20px;
   border: 1px solid #cce8dd;
+}
+
+.installAppBtn {
+  border: 0;
+  border-radius: 20px;
+  background: linear-gradient(135deg, #075e54, #0b8a78);
+  color: #ffffff;
+  font: inherit;
+  font-size: 11.5px;
+  font-weight: 700;
+  padding: 7px 14px;
+  cursor: pointer;
+  white-space: nowrap;
+  box-shadow: 0 3px 10px rgba(7, 94, 84, 0.22);
+  transition: transform 0.12s ease, opacity 0.12s ease;
+}
+
+.installAppBtn:hover {
+  opacity: 0.94;
+  transform: translateY(-1px);
+}
+
+.pwaInstalledTag {
+  font-size: 11px;
+  font-weight: 700;
+  color: #166534;
+  background: #dcfce7;
+  padding: 6px 11px;
+  border-radius: 20px;
+  border: 1px solid #bbf7d0;
+}
+
+.pwaBanner {
+  margin-top: 14px;
+  padding: 12px 16px;
+  border-radius: 14px;
+  background: linear-gradient(135deg, #edf7f3, #f6fbf9);
+  border: 1px solid #bfe3d5;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.pwaBannerText {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.pwaBannerText strong {
+  font-size: 13px;
+  color: var(--green-dark);
+}
+
+.pwaBannerText span {
+  font-size: 11.5px;
+  color: var(--muted);
+}
+
+.pwaBannerActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.pwaDismissBtn {
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 6px;
+}
+
+.pwaDismissBtn:hover {
+  background: #e2eeea;
+  color: var(--ink);
 }
 
 /* Intro Hero */

@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import seedEmployees from '../public/employees.json';
 import * as XLSX from 'xlsx';
+import { PwaInstall } from '../components/PwaInstall';
 
 export type Employee = {
   id: number | string;
@@ -716,9 +717,12 @@ export default function Home() {
           </div>
         </div>
         <div className="topbarRight">
+          <PwaInstall variant="button" />
           <span className="localTag">● {employees.length} Contacts Available</span>
         </div>
       </header>
+
+      <PwaInstall variant="banner" />
 
       <section className="intro">
         <div>
