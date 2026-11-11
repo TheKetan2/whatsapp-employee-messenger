@@ -1,0 +1,21 @@
+# dependencies
+/node_modules
+/.pnp
+.pnp.js
+
+# next.js build & dev cache
+/.next/
+/out/
+/build
+
+# typescript incremental info
+tsconfig.tsbuildinfo
+next-env.d.ts
+
+# debug & local env
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.env*.local
+.DS_Store
+*.pem
