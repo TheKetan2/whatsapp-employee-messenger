@@ -547,12 +547,65 @@ export default function Home() {
 
   const person = employees.find(e => String(e.id) === queue[current]);
 
-  const whatsappUrl = (e: Employee) =>
-    `https://wa.me/91${e.phone}?text=${encodeURIComponent(message)}`;
+  const whatsappWebUrl = (e: Employee) =>
+    `https://wa.me/91${cleanPhone(e.phone)}?text=${encodeURIComponent(message)}`;
+
+  const whatsappNativeUrl = (e: Employee) =>
+    `whatsapp://send?phone=91${cleanPhone(e.phone)}&text=${encodeURIComponent(message)}`;
+
+  const launchWhatsAppChat = (e: Employee) => {
+    const phone = cleanPhone(e.phone);
+    if (phone.length !== 10) return;
+    const isMobile =
+      typeof navigator !== 'undefined' && /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+    if (isMobile) {
+      window.location.href = whatsappNativeUrl(e);
+    } else {
+      window.open(whatsappWebUrl(e), '_blank', 'noopener,noreferrer');
+    }
+  };
 
   const openTextChat = () => {
     if (!person || !person.phone) return;
-    window.open(whatsappUrl(person), '_blank', 'noopener,noreferrer');
+    launchWhatsAppChat(person);
+  };
+
+  const copyImageToClipboard = async (imgFile: File): Promise<boolean> => {
+    if (typeof ClipboardItem === 'undefined' || !navigator.clipboard?.write) return false;
+    try {
+      const bitmap = await createImageBitmap(imgFile);
+      const canvas = document.createElement('canvas');
+      canvas.width = bitmap.width;
+      canvas.height = bitmap.height;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return false;
+      ctx.drawImage(bitmap, 0, 0);
+      const pngBlob = await new Promise<Blob | null>(resolve =>
+        canvas.toBlob(resolve, 'image/png')
+      );
+      if (!pngBlob) return false;
+      await navigator.clipboard.write([new ClipboardItem({ 'image/png': pngBlob })]);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  const copyImageAndOpenChat = async () => {
+    if (!person || !person.phone) return;
+    if (file) {
+      const copied = await copyImageToClipboard(file);
+      if (copied) {
+        setNotice(
+          `Image copied to clipboard! Opening ${person.name}'s WhatsApp chat — paste the image there and tap Send.`
+        );
+      } else {
+        setNotice(
+          `Opening ${person.name}'s WhatsApp chat directly. Attach "${file.name}" inside WhatsApp if clipboard paste is unavailable on your device.`
+        );
+      }
+    }
+    launchWhatsAppChat(person);
   };
 
   const recordSent = (emp: Employee, mode: 'queue' | 'direct') => {
@@ -579,7 +632,7 @@ export default function Home() {
       setNotice(`${e.name} does not have a phone number listed.`);
       return;
     }
-    window.open(whatsappUrl(e), '_blank', 'noopener,noreferrer');
+    launchWhatsAppChat(e);
     if (message.trim() || file) {
       recordSent(e, 'direct');
       setNotice(`Opened WhatsApp chat for ${e.name} and logged in Message History.`);
@@ -1342,22 +1395,38 @@ export default function Home() {
               </div>
 
               <div className="queueButtons">
-                {file ? (
-                  <button className="primary" onClick={shareImage}>
-                    Share image + caption ↗
-                  </button>
-                ) : (
-                  <button className="primary" onClick={openTextChat}>
-                    Open WhatsApp chat ↗
-                  </button>
+                <button
+                  type="button"
+                  className="primary"
+                  onClick={file ? copyImageAndOpenChat : openTextChat}
+                >
+                  {file ? 'Open WhatsApp chat (+ copy image) ↗' : 'Open WhatsApp chat ↗'}
+                </button>
+                {file && (
+                  <>
+                    <button type="button" className="outlineBtn" onClick={openTextChat}>
+                      💬 Open chat only ↗
+                    </button>
+                    <button type="button" className="outlineBtn" onClick={shareImage}>
+                      📤 Share image (pick contact)
+                    </button>
+                  </>
                 )}
-                <button className="outlineBtn" onClick={() => next(false)}>
+                <button type="button" className="outlineBtn" onClick={() => next(false)}>
                   Skip recipient
                 </button>
-                <button className="sentBtn" onClick={() => next(true)}>
+                <button type="button" className="sentBtn" onClick={() => next(true)}>
                   ✓ Mark sent & Next
                 </button>
               </div>
+              {file && (
+                <p className="hint">
+                  Direct WhatsApp links open {person.name}&apos;s exact chat with your message
+                  pre-filled (your image is copied to clipboard where supported so you can paste it
+                  inside the chat). Use &ldquo;Share image (pick contact)&rdquo; only if you want
+                  Android&apos;s share sheet.
+                </p>
+              )}
 
               <p className="hint">
                 After the chat window opens and message is sent in WhatsApp, return here and click{' '}
