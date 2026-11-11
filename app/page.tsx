@@ -188,6 +188,7 @@ export default function Home() {
   const [message, setMessage] = useState('');
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState('');
+  const [imageCopied, setImageCopied] = useState(false);
 
   const [queue, setQueue] = useState<string[]>([]);
   const [current, setCurrent] = useState(0);
@@ -591,21 +592,19 @@ export default function Home() {
     }
   };
 
-  const copyImageAndOpenChat = async () => {
-    if (!person || !person.phone) return;
-    if (file) {
-      const copied = await copyImageToClipboard(file);
-      if (copied) {
-        setNotice(
-          `Image copied to clipboard! Opening ${person.name}'s WhatsApp chat — paste the image there and tap Send.`
-        );
-      } else {
-        setNotice(
-          `Opening ${person.name}'s WhatsApp chat directly. Attach "${file.name}" inside WhatsApp if clipboard paste is unavailable on your device.`
-        );
-      }
+  const copyAttachedImage = async () => {
+    if (!file) return;
+    const copied = await copyImageToClipboard(file);
+    setImageCopied(copied);
+    if (copied) {
+      setNotice(
+        `Image copied to clipboard! Now tap "Open WhatsApp chat" and paste inside WhatsApp.`
+      );
+    } else {
+      setNotice(
+        `Clipboard image copy is unavailable in this browser. Use "Share image + caption" or attach "${file.name}" manually in WhatsApp.`
+      );
     }
-    launchWhatsAppChat(person);
   };
 
   const recordSent = (emp: Employee, mode: 'queue' | 'direct') => {
@@ -1262,7 +1261,14 @@ export default function Home() {
               type="file"
               accept="image/*"
               hidden
-              onChange={e => setFile(e.target.files?.[0] || null)}
+              onChange={e => {
+                const picked = e.target.files?.[0] || null;
+                setFile(picked);
+                setImageCopied(false);
+                if (picked) {
+                  void copyImageToClipboard(picked).then(ok => setImageCopied(ok));
+                }
+              }}
             />
           </label>
         </div>
@@ -1395,20 +1401,16 @@ export default function Home() {
               </div>
 
               <div className="queueButtons">
-                <button
-                  type="button"
-                  className="primary"
-                  onClick={file ? copyImageAndOpenChat : openTextChat}
-                >
-                  {file ? 'Open WhatsApp chat (+ copy image) ↗' : 'Open WhatsApp chat ↗'}
+                <button type="button" className="primary" onClick={openTextChat}>
+                  {file ? 'Open WhatsApp chat (text pre-filled) ↗' : 'Open WhatsApp chat ↗'}
                 </button>
                 {file && (
                   <>
-                    <button type="button" className="outlineBtn" onClick={openTextChat}>
-                      💬 Open chat only ↗
+                    <button type="button" className="outlineBtn" onClick={copyAttachedImage}>
+                      {imageCopied ? '✓ Image copied — paste in chat' : '📋 Copy image to paste'}
                     </button>
                     <button type="button" className="outlineBtn" onClick={shareImage}>
-                      📤 Share image (pick contact)
+                      📤 Share image + caption (pick contact)
                     </button>
                   </>
                 )}
@@ -1421,10 +1423,11 @@ export default function Home() {
               </div>
               {file && (
                 <p className="hint">
-                  Direct WhatsApp links open {person.name}&apos;s exact chat with your message
-                  pre-filled (your image is copied to clipboard where supported so you can paste it
-                  inside the chat). Use &ldquo;Share image (pick contact)&rdquo; only if you want
-                  Android&apos;s share sheet.
+                  WhatsApp chat links (<code>whatsapp://</code> / <code>wa.me</code>) only pre-fill
+                  text and cannot auto-attach image files from a website. To send the image:{' '}
+                  <strong>{imageCopied ? 'it is copied to your clipboard — tap Open WhatsApp chat and Paste inside WhatsApp' : 'tap Copy image to paste then Open WhatsApp chat'}</strong>,
+                  or tap <strong>Share image + caption</strong> to attach both and pick{' '}
+                  {person.name} inside WhatsApp.
                 </p>
               )}
 

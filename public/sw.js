@@ -1,4 +1,4 @@
-const CACHE_NAME = 'wa-messenger-v4';
+const CACHE_NAME = 'wa-messenger-v6';
 const SCOPE_URL = new URL('./', self.location.href);
 const toScopedUrl = path => new URL(path, SCOPE_URL).href;
 
